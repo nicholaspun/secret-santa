@@ -1,4 +1,5 @@
 from lib.User import User
+from lib.util import createDerangment
 
 class SecretSanta:
     """Manages the Secret Santa game (? - Not the right word, but couldn't think of a better one)
@@ -17,13 +18,16 @@ class SecretSanta:
         Creates and registers user with the given name
 
     initializeNetwork() : None
-        Sets neighbours for every user    
+        Sets neighbours for every user
+
+    createDerangement() : None
+        Pairs users off to play Secret Santa!
     """
     def __init__(self):
         self.__users = []
 
     def registerUser(self, name):
-        """Creates and registers user with the given name
+        """Creates and registers user with the given name.
 
         This is a weird implementation since users cannot exist outside
         of this protocol.
@@ -43,33 +47,42 @@ class SecretSanta:
     def initializeNetwork(self):
         """Set neighbours for every user.
         We currently just build a complete graph for the network structure.
-
-        Parameters:
-        ----------
-        None
-
-        Returns:
-        -------
-        None
         """
         for i in range(len(self.__users)):
             for j in range(len(self.__users)): 
                 '''
-                Oh gods, O(n^2). Best we're going to do though since there are O(n^2) edges in a
-                complete graph.
+                Oh gods, O(n^2). The worst amount of edges to have. Darn you complete graph!
 
                 Wait, complete graph you say? Isn't that not ideal for this problem?
                 Well.
                 Yes.
-                But, all the users here are trustworthy and don't keep infinite message log so it's ok :) 
+                But, small steps :)
+                Let's just assume that all the users here are trustworthy and don't keep the entire 
+                message log so it's ok.
                 '''
                 if i != j: 
                     self.__users[i].addNeighbour(self.__users[j])
 
     def createDerangement(self):
+        """Pairs users off to play Secret Santa!
+
+        Follows the algorithm created here: https://math.stackexchange.com/a/2897431.
+        """
         self.__publishPublicKey()
+        
+        # Let's just ignore the random seed part of the algorithm
+        derangement = createDerangment(len(self.__users))        
+        for user in self.__users:
+            user.publishName(derangement)
+
+        # For demonstration purposes, this prints all pairings
+        for user in self.__users:
+            user.revealBuddy()
 
     def __publishPublicKey(self):
+        """Implements the sub-algorithm (from https://math.stackexchange.com/a/2897431) to anonymously
+        share everyone user's public key.
+        """
         for user in self.__users:
             user.publishKeyForAnonymousMessaging()
 

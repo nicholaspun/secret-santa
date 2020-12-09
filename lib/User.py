@@ -4,6 +4,44 @@ import random
 import functools
 
 class User:
+    """Individual nodes in the network.
+
+    Also, the people who are going to playing the Secret Santa game.
+
+    Attributes:
+    -----------
+    name : String
+
+    Methods:
+    --------
+    addNeighbour(user) : User -> None
+        Adds user as a neighbour
+
+    receive(message) : String -> None
+        Puts message into message log
+
+    sendToNeighbours(message) : String -> None
+        Sends message to all neighbours
+
+    publishKeyForAnonymousMessaging() : None
+        Preparation step for the sub-algorithm given in https://math.stackexchange.com/a/2897431
+
+    publishEncryptedPublicKey(n) : Integer -> None
+        Encrypts own public key User.MAX_ITERATED_ENCRYPTION # of times before sending to all neighbours
+
+    decryptEncryptedPublicKeysAndPublishIfSuccessful(n) : Integer -> None
+        Decrypts the top n messages and publishes to all neighbours if the decryption is successful
+
+    savePublicKeys(n) : Integer -> None
+        Save the top n messages (which we assume are the public keys of everyone in the game)
+
+    publishName() : [Integer] -> None
+        Encrypts name using the public key specified in the derangement and publishes to all neighbours
+
+    revealBuddy() : None
+        Decrypts all the messages in queue and prints a message if one successfully reveals a name of a user
+    """
+
     MAX_ITERATED_ENCRYPTIONS = 3 # Limit the blow-up of the final message size
 
     '''
@@ -51,9 +89,11 @@ class User:
         self.__publicKey = key.publickey()
 
     def addNeighbour(self, user):
+        """Adds user as a neighbour"""
         self.__neighbours.append(user)
 
     def receive(self, message):
+        """Puts message into message log"""
         self.__messageLog.append(message)
 
     def sendToNeighbours(self, message):
@@ -97,4 +137,21 @@ class User:
     def savePublicKeys(self, n):
         self.__allPublicKeys = [ self.__messageLog.pop(0) for _ in range(n) ]
 
+    def publishName(self, derangement):
+        selfIdx = None
+        for idx, key in enumerate(self.__allPublicKeys):
+            if key == self.__publicKey.exportKey():
+                selfIdx = idx
+                break
+        
+        secretSantaPublicKey = RSA.importKey(self.__allPublicKeys[derangement[selfIdx]])
+        self.sendToNeighbours(PKCS1_OAEP.new(secretSantaPublicKey).encrypt(bytes(self.name, 'utf-8')))
+
+    def revealBuddy(self):
+        while len(self.__messageLog) != 0:
+            try:
+                name = PKCS1_OAEP.new(self.__privateKey).decrypt(self.__messageLog.pop(0))
+                print("{} paired with {}".format(self.name, name.decode('utf-8')))
+            except ValueError:
+                continue
 
