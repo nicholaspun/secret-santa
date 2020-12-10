@@ -89,31 +89,60 @@ class User:
         self.__publicKey = key.publickey()
 
     def addNeighbour(self, user):
-        """Adds user as a neighbour"""
+        """Adds user as a neighbour
+        
+        Parameters:
+        -----------
+        user : User
+
+        """
         self.__neighbours.append(user)
 
     def receive(self, message):
-        """Puts message into message log"""
+        """Puts message into message log
+        
+        Parameters:
+        -----------
+        message : String
+        
+        """
         self.__messageLog.append(message)
 
     def sendToNeighbours(self, message):
+        """Sends message to all neighbours"""
         for neighbour in self.__neighbours:
             neighbour.receive(message)
 
     def publishKeyForAnonymousMessaging(self):
+        """Preparation step for the sub-algorithm given in https://math.stackexchange.com/a/2897431
+        
+        Generates an RSA public/private key pair and sends the publickey to all neighbours.
+        """
         key = RSA.generate(User.RSA_MODULUS)
         self.privateKeyForAnonymousMessaging = key
         self.publicKeyForAnonymousMessaging = key.publickey()
         self.sendToNeighbours(self.publicKeyForAnonymousMessaging)
     
     def publishEncryptedPublicKey(self, n):
+        """Encrypts own public key User.MAX_ITERATED_ENCRYPTION # of times before sending to all neighbours
+        
+        Assumes that (n-1) public keys have been received from the other users in the game.
+        Randomly selects User.MAX_ITERATED_ENCRYPTIONS no. of keys to iteratively encrypt user's own public key.
+        The resulting message is then sent out to all neighbours.
+        The goal here is to prevent the other users from knowing who sent out which public key.
+        
+        Parameters:
+        -----------
+        n : Integer
+            Total number of users in the Secret Santa game (including ourselves)
+        """
         publickeys = [ self.__messageLog.pop(0) for _ in range(n-1) ]
         publickeys.append(self.publicKeyForAnonymousMessaging)
 
         random.shuffle(publickeys) # Side note: I hate that this mutates the list
 
         encryptedPublicKey = self.__publicKey.exportKey()
-        for key in publickeys[:User.MAX_ITERATED_ENCRYPTIONS]:
+        for key in publickeys[:min(n, User.MAX_ITERATED_ENCRYPTIONS)]:
             chunks = [encryptedPublicKey[i:i+User.MAX_MESSAGE_BYTES] for i in range(0, len(encryptedPublicKey), User.MAX_MESSAGE_BYTES)]
             encryptedChunks = [PKCS1_OAEP.new(key).encrypt(chunk) for chunk in chunks]
             encryptedPublicKey = functools.reduce(lambda x, y: x + y, encryptedChunks)
@@ -122,6 +151,20 @@ class User:
         self.__messageLog.append(encryptedPublicKey)
 
     def decryptEncryptedPublicKeysAndPublishIfSuccessful(self, n):
+        """Decrypts the top n messages and publishes to all neighbours if the decryption is successful.
+
+        The resulting message from User.publishEncryptedPublicKey(n) is wrapped in multiple encryptions (like an onion).
+        This function is performed as many times as there were encryptions, until each encryption layer is decrypted.
+        
+        Here, we perform a single round of decryption. 
+        If the decryption using our private key is successful (pycryptodome does this automatically for us by checking the
+        padding, as specified in https://tools.ietf.org/html/rfc2437), the resulting message is sent to all neighbours
+
+        Parameters:
+        -----------
+        n : Integer
+            Total number of users in the Secret Santa game (including ourselves)
+        """
         publickeys = [ self.__messageLog.pop(0) for _ in range(n) ]
         
         for key in publickeys:
@@ -135,9 +178,27 @@ class User:
                 continue 
 
     def savePublicKeys(self, n):
+        """Save the top n messages (which we assume are the public keys of everyone in the game)
+        
+        Parameters:
+        -----------
+        n : Integer
+            Total number of users in the Secret Santa game (including ourselves)
+        """
         self.__allPublicKeys = [ self.__messageLog.pop(0) for _ in range(n) ]
 
     def publishName(self, derangement):
+        """Encrypts name using the public key specified in the derangement and publishes to all neighbours
+
+        Assumes that everyone has the same ordering of publickeys (this is true in our case).
+        Our position in the derangement is then exactly our order in the list of publickeys, and
+        our secret santa is defined to be whoever we are mapped to in the given derangement.
+
+        Parameters:
+        -----------
+        derangement : [Integer]
+        """
+        
         selfIdx = None
         for idx, key in enumerate(self.__allPublicKeys):
             if key == self.__publicKey.exportKey():
@@ -148,10 +209,14 @@ class User:
         self.sendToNeighbours(PKCS1_OAEP.new(secretSantaPublicKey).encrypt(bytes(self.name, 'utf-8')))
 
     def revealBuddy(self):
+        """Decrypts all the messages in queue and prints a message if one successfully reveals a name of a user.
+
+        This doesn't technically align with the spirit of the game, but since this is just a demo, this
+        function reveals that the scheme has worked.
+        """
         while len(self.__messageLog) != 0:
             try:
                 name = PKCS1_OAEP.new(self.__privateKey).decrypt(self.__messageLog.pop(0))
                 print("{} paired with {}".format(self.name, name.decode('utf-8')))
             except ValueError:
                 continue
-
